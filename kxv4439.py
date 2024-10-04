@@ -1,26 +1,34 @@
 import numpy as np
 import pandas as pd
 from math import sqrt
-from collections import Counter
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import cross_val_score
-from sklearn.preprocessing import LabelEncoder
 
 # Function to load dataset from a file
 def load_dataset(filename):
     return pd.read_csv(filename, header=None)
 
-# Preprocessing function to convert categorical data to numeric using LabelEncoder
+# Preprocessing function to manually encode categorical data to numeric
 def preprocess_data(df):
-    le = LabelEncoder()
     for col in df.columns:
         if df[col].dtype == object:
-            df[col] = le.fit_transform(df[col])
+            unique_vals = df[col].unique()
+            val_map = {val: idx for idx, val in enumerate(unique_vals)}
+            df[col] = df[col].map(val_map)
     return df
 
 # Euclidean distance calculation
 def euclidean_distance(row1, row2):
     return sqrt(sum((row1[i] - row2[i]) ** 2 for i in range(len(row1))))
+
+# Majority vote function
+def majority_vote(neighbors):
+    class_votes = {}
+    for neighbor in neighbors:
+        if neighbor in class_votes:
+            class_votes[neighbor] += 1
+        else:
+            class_votes[neighbor] = 1
+    sorted_votes = sorted(class_votes.items(), key=lambda item: item[1], reverse=True)
+    return sorted_votes[0][0]
 
 # KNN Algorithm implementation from scratch
 def knn_predict(X_train, y_train, test_instance, k=3):
@@ -34,8 +42,7 @@ def knn_predict(X_train, y_train, test_instance, k=3):
     k_neighbors = [label for _, label in distances[:k]]
     
     # Majority vote
-    most_common = Counter(k_neighbors).most_common(1)
-    return most_common[0][0]
+    return majority_vote(k_neighbors)
 
 # K-fold cross-validation implementation from scratch
 def k_fold_cross_validation(X, y, k=10, knn_k=3):
@@ -60,12 +67,23 @@ def k_fold_cross_validation(X, y, k=10, knn_k=3):
     
     return np.mean(accuracies)
 
+# Custom accuracy metric calculation
+def calculate_accuracy(y_true, y_pred):
+    correct = 0
+    for i in range(len(y_true)):
+        if y_true[i] == y_pred[i]:
+            correct += 1
+    return correct / len(y_true)
+
 # Function to compare custom KNN with Scikit-Learn's KNN
 def compare_knn_implementations(X, y, knn_k=3):
     # My KNN implementation
     accuracy_my_knn = k_fold_cross_validation(X.values, y.values, k=10, knn_k=knn_k)
     
-    # Scikit-Learn's KNN implementation
+    # Scikit-Learn's KNN implementation (only used for comparison)
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.model_selection import cross_val_score
+    
     knn_sklearn = KNeighborsClassifier(n_neighbors=knn_k)
     accuracy_sklearn = np.mean(cross_val_score(knn_sklearn, X.values, y.values, cv=10))
     
