@@ -1,65 +1,48 @@
 import numpy as np
 import pandas as pd
 from math import sqrt
-from collections import Counter
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import cross_val_score
-from sklearn.preprocessing import LabelEncoder
 
 # Function to load dataset from a file
 def load_dataset(filename):
     return pd.read_csv(filename, header=None)
 
-# Preprocessing function to convert categorical data to numeric using LabelEncoder
+# Preprocessing function to manually encode categorical data to numeric
 def preprocess_data(df):
-    le = LabelEncoder()
     for col in df.columns:
         if df[col].dtype == object:
-            df[col] = le.fit_transform(df[col])
+            unique_vals = df[col].unique()
+            val_map = {val: idx for idx, val in enumerate(unique_vals)}
+            df[col] = df[col].map(val_map)
     return df
 
-# Euclidean distance calculation (standard for KNN)
+# Euclidean distance calculation
 def euclidean_distance(row1, row2):
     return sqrt(sum((row1[i] - row2[i]) ** 2 for i in range(len(row1))))
 
-# Calculate local density by measuring the average distance of a point to its k nearest neighbors
-def local_density(X_train, k=5):
-    densities = []
-    
-    for i in range(len(X_train)):
-        distances = []
-        for j in range(len(X_train)):
-            if i != j:
-                distances.append(euclidean_distance(X_train[i], X_train[j]))
-        
-        # Sort distances and take the average of the k nearest distances
-        distances.sort()
-        density = np.mean(distances[:k])  # Average distance to k nearest neighbors
-        densities.append(density)
-    
-    return densities
+# Majority vote function
+def majority_vote(neighbors):
+    class_votes = {}
+    for neighbor in neighbors:
+        if neighbor in class_votes:
+            class_votes[neighbor] += 1
+        else:
+            class_votes[neighbor] = 1
+    sorted_votes = sorted(class_votes.items(), key=lambda item: item[1], reverse=True)
+    return sorted_votes[0][0]
 
-# DB-kNN Algorithm implementation (density-based KNN)
-def db_knn_predict(X_train, y_train, test_instance, k=3, density_weights=None):
+# KNN Algorithm implementation from scratch
+def knn_predict(X_train, y_train, test_instance, k=3):
     distances = []
-    
     for i in range(len(X_train)):
         distance = euclidean_distance(X_train[i], test_instance)
-        distances.append((distance, y_train[i], density_weights[i]))
+        distances.append((distance, y_train[i]))
     
     # Sort by distance and get the nearest k neighbors
     distances.sort(key=lambda x: x[0])
-    k_neighbors = distances[:k]
-    
-    # Density-based weighted voting: neighbors with lower density have higher weight
-    class_votes = {}
-    for dist, label, density in k_neighbors:
-        weight = (1 / (dist + 1e-5)) * (1 / (density + 1e-5))  # Inverse distance and inverse density as weight
-        class_votes[label] = class_votes.get(label, 0) + weight
+    k_neighbors = [label for _, label in distances[:k]]
     
     # Majority vote
-    most_common = max(class_votes, key=class_votes.get)
-    return most_common
+    return majority_vote(k_neighbors)
 
 # K-fold cross-validation implementation from scratch
 def k_fold_cross_validation(X, y, k=10, knn_k=3):
@@ -73,12 +56,9 @@ def k_fold_cross_validation(X, y, k=10, knn_k=3):
         X_train = np.concatenate((X[:start], X[end:]), axis=0)
         y_train = np.concatenate((y[:start], y[end:]), axis=0)
         
-        # Calculate density weights for the training set
-        density_weights = local_density(X_train, k=knn_k)
-        
         correct_predictions = 0
         for i in range(len(X_test)):
-            prediction = db_knn_predict(X_train, y_train, X_test[i], k=knn_k, density_weights=density_weights)
+            prediction = knn_predict(X_train, y_train, X_test[i], k=knn_k)
             if prediction == y_test[i]:
                 correct_predictions += 1
         
@@ -87,16 +67,27 @@ def k_fold_cross_validation(X, y, k=10, knn_k=3):
     
     return np.mean(accuracies)
 
-# Function to compare DB-kNN with Scikit-Learn's KNN
+# Custom accuracy metric calculation
+def calculate_accuracy(y_true, y_pred):
+    correct = 0
+    for i in range(len(y_true)):
+        if y_true[i] == y_pred[i]:
+            correct += 1
+    return correct / len(y_true)
+
+# Function to compare custom KNN with Scikit-Learn's KNN
 def compare_knn_implementations(X, y, knn_k=3):
-    # DB-kNN implementation
-    accuracy_db_knn = k_fold_cross_validation(X.values, y.values, k=10, knn_k=knn_k)
+    # My KNN implementation
+    accuracy_my_knn = k_fold_cross_validation(X.values, y.values, k=10, knn_k=knn_k)
     
-    # Scikit-Learn's KNN implementation
+    # Scikit-Learn's KNN implementation (only used for comparison)
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.model_selection import cross_val_score
+    
     knn_sklearn = KNeighborsClassifier(n_neighbors=knn_k)
     accuracy_sklearn = np.mean(cross_val_score(knn_sklearn, X.values, y.values, cv=10))
     
-    print(f"DB-kNN Accuracy (with density weighting): {accuracy_db_knn * 100:.2f}%")
+    print(f"My KNN Accuracy: {accuracy_my_knn * 100:.2f}%")
     print(f"Scikit-Learn KNN Accuracy: {accuracy_sklearn * 100:.2f}%")
 
 # Main function to load datasets, preprocess, and compare KNN
