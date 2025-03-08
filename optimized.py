@@ -5,6 +5,7 @@ from collections import Counter
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import LabelEncoder
+from scipy.stats import ttest_rel  # Added for t-test
 
 # Function to load dataset from a file
 def load_dataset(filename):
@@ -62,6 +63,7 @@ def db_knn_predict(X_train, y_train, test_instance, k=3, density_weights=None):
     return most_common
 
 # K-fold cross-validation implementation from scratch
+# Modified to return the list of fold accuracies for later statistical testing.
 def k_fold_cross_validation(X, y, k=10, knn_k=3):
     fold_size = len(X) // k
     accuracies = []
@@ -85,19 +87,30 @@ def k_fold_cross_validation(X, y, k=10, knn_k=3):
         accuracy = correct_predictions / len(X_test)
         accuracies.append(accuracy)
     
-    return np.mean(accuracies)
+    return accuracies
 
-# Function to compare DB-kNN with Scikit-Learn's KNN
+# Function to compare DB-kNN with Scikit-Learn's KNN and perform t-test for significance
 def compare_knn_implementations(X, y, knn_k=3):
-    # DB-kNN implementation
-    accuracy_db_knn = k_fold_cross_validation(X.values, y.values, k=10, knn_k=knn_k)
+    # DB-kNN implementation (get fold accuracies)
+    db_knn_accuracies = k_fold_cross_validation(X.values, y.values, k=10, knn_k=knn_k)
+    accuracy_db_knn = np.mean(db_knn_accuracies)
     
-    # Scikit-Learn's KNN implementation
+    # Scikit-Learn's KNN implementation (get fold accuracies using cross_val_score)
     knn_sklearn = KNeighborsClassifier(n_neighbors=knn_k)
-    accuracy_sklearn = np.mean(cross_val_score(knn_sklearn, X.values, y.values, cv=10))
+    sklearn_accuracies = cross_val_score(knn_sklearn, X.values, y.values, cv=10)
+    accuracy_sklearn = np.mean(sklearn_accuracies)
     
     print(f"DB-kNN Accuracy (with density weighting): {accuracy_db_knn * 100:.2f}%")
     print(f"Scikit-Learn KNN Accuracy: {accuracy_sklearn * 100:.2f}%")
+    
+    # Perform paired t-test on the fold accuracies
+    t_stat, p_value = ttest_rel(db_knn_accuracies, sklearn_accuracies)
+    print(f"T-test statistic: {t_stat:.4f}, p-value: {p_value:.4f}")
+    
+    if p_value < 0.05:
+        print("The difference in performance is statistically significant.")
+    else:
+        print("The difference in performance is not statistically significant.")
 
 # Main function to load datasets, preprocess, and compare KNN
 def main():
